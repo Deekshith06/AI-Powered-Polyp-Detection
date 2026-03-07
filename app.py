@@ -26,6 +26,7 @@ def load_core():
     return model
 
 def load_corrections():
+    os.makedirs("data", exist_ok=True)
     return json.load(open("data/user_corrections.json")) if os.path.exists("data/user_corrections.json") else []
 
 def save_correction(data):
@@ -130,6 +131,10 @@ if st.session_state.is_playing:
             if str(st.session_state.src).isdigit():
                 time.sleep(0.5); cap = cv2.VideoCapture(int(st.session_state.src)); continue
             else:
+                if not os.path.exists(st.session_state.src):
+                    st.error(f"Sample video not found at {st.session_state.src}. Please download it or switch to Webcam.")
+                    st.session_state.is_playing = False
+                    break
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0); ret, f = cap.read()
                 if not ret: break
 

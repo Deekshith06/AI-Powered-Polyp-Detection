@@ -1,0 +1,4 @@
+[server]
+maxUploadSize = 50
+enableCORS = false
+headless = true
