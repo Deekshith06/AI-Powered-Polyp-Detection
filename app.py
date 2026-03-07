@@ -74,8 +74,8 @@ def run_inference(frame, model, min_conf):
     r, g, b = avg_color
     
     # If Red isn't significantly dominant, it's not a colonoscopy.
-    # We use a very fast heuristic: Red must be > Green and > Blue by a margin.
-    is_biological = (r > g * 1.1) and (r > b * 1.1) and (r > 40)
+    # We use a strict heuristic: Skin is slightly red, but tissue is heavily red.
+    is_biological = (r > g * 1.35) and (r > b * 1.35) and (r > 60)
     
     dets, draw = [], frame.copy()
     
