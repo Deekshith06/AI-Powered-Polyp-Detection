@@ -33,7 +33,13 @@ st.session_state.setdefault('src', '0')
 @st.cache_resource(show_spinner="Loading Engine...")
 def load_core():
     from ultralytics import YOLO # Lazy load to save RAM and startup time 
-    model = YOLO("yolov8n.pt")
+    if os.path.exists("polyp_model.pt"):
+        model = YOLO("polyp_model.pt")
+        st.session_state.is_generic = False
+    else:
+        model = YOLO("yolov8n.pt")
+        st.session_state.is_generic = True
+        
     model(np.zeros((480, 640, 3), dtype=np.uint8), verbose=False) # Warmup
     return model
 
@@ -61,7 +67,10 @@ def run_inference(frame, model, min_conf):
     res = model(frame, conf=min_conf, verbose=False)[0]
     dets, draw = [], frame.copy()
     
-    for b in res.boxes:
+    # Clean up generic model clutter by only taking the top 2 highest-confidence detections
+    boxes = sorted(res.boxes, key=lambda b: float(b.conf[0].cpu()), reverse=True)[:2]
+    
+    for b in boxes:
         x1, y1, x2, y2 = map(int, b.xyxy[0].cpu().tolist())
         c = float(b.conf[0].cpu())
         dets.append({"bbox": [x1, y1, x2, y2], "confidence": c})
@@ -69,7 +78,7 @@ def run_inference(frame, model, min_conf):
         # Color scale
         clr = (0, 255, 0) if c > 0.85 else (255, 255, 0) if c > 0.70 else (255, 0, 0)
         cv2.rectangle(draw, (x1, y1), (x2, y2), clr, 2)
-        cv2.putText(draw, f"{c:.2f}", (x1, max(y1-5, 0)), 0, 0.5, clr, 2)
+        cv2.putText(draw, f"Polyp: {c:.2f}", (x1, max(y1-5, 0)), 0, 0.5, clr, 2)
         
     return draw, dets, (time.time() - t0) * 1000
 
@@ -102,6 +111,10 @@ with st.sidebar:
 
 # --- Main Screen ---
 st.title("🔬 Real-time Polyp Detection")
+
+if st.session_state.get('is_generic', True):
+    st.warning("⚠️ **Prototype Mode:** Using the generic COCO AI model (detects everyday objects). To detect actual stomach diseases, please add a trained `polyp_model.pt` to the project directory.")
+
 c1, c2 = st.columns([3, 1])
 video_box, fps_box, det_box, lat_box, sev_box = c1.empty(), c2.empty(), c2.empty(), c2.empty(), c2.empty()
 
