@@ -64,8 +64,29 @@ def get_severity_model(_dummy_trigger=0):
 
 def run_inference(frame, model, min_conf):
     t0 = time.time()
-    res = model(frame, conf=min_conf, verbose=False)[0]
+    
+    # --- Biological Filter Hack ---
+    # Fast color space check: Real colonoscopies are overwhelmingly red/pink.
+    # If the camera sees lots of green/blue/bright white (like a bedroom or face),
+    # we instantly bypass the AI to prevent Out-of-Distribution hallucinations.
+    avg_color = cv2.mean(frame)[:3] # B, G, R
+    # In RGB (since frame is converted to RGB before this), avg_color is R, G, B
+    r, g, b = avg_color
+    
+    # If Red isn't significantly dominant, it's not a colonoscopy.
+    # We use a very fast heuristic: Red must be > Green and > Blue by a margin.
+    is_biological = (r > g * 1.1) and (r > b * 1.1) and (r > 40)
+    
     dets, draw = [], frame.copy()
+    
+    if not is_biological and not st.session_state.get('is_generic', True):
+        # We are using the medical model, but looking at a non-medical scene.
+        # Draw a warning and skip AI parsing to prevent face-hallucinations.
+        cv2.putText(draw, "Non-Medical Scene Detected. AI Paused.", (20, 30), 0, 0.7, (0, 165, 255), 2)
+        return draw, dets, (time.time() - t0) * 1000
+
+    # Actually run the heavy AI model
+    res = model(frame, conf=min_conf, verbose=False)[0]
     
     # Clean up generic model clutter by only taking the top 2 highest-confidence detections
     boxes = sorted(res.boxes, key=lambda b: float(b.conf[0].cpu()), reverse=True)[:2]
