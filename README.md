@@ -42,7 +42,7 @@ cd Polyp-Detection-App
 python3 -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
-python run.py
+streamlit run app.py
 ```
 
 > ⚠️ **Note:** The `yolov8n.pt` model weights will automatically download on the first run.
