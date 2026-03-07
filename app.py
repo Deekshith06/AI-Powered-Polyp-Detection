@@ -108,8 +108,14 @@ with st.sidebar:
     st.title("⚙️ AI Controls")
     
     # Input logic
-    src_type = st.radio("Source", ["Sample video", "Live Webcam"])
-    new_src = "data/sample_colonoscopy.mp4" if src_type == "Sample video" else "0"
+    src_type = st.radio("Source", ["Sample video", "Live Webcam", "Upload Image"])
+    if src_type == "Upload Image":
+        uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+        new_src = "upload"
+    else:
+        new_src = "data/sample_colonoscopy.mp4" if src_type == "Sample video" else "0"
+        uploaded_file = None
+        
     if new_src != st.session_state.src:
         st.session_state.src = new_src
         st.session_state.is_playing = True
@@ -121,7 +127,10 @@ with st.sidebar:
     else:
         st.session_state.thresh = st.slider("Threshold", 0.0, 1.0, st.session_state.thresh, 0.05)
         
-    st.session_state.is_playing = not st.button("▶️ Play / ⏸️ Pause Stream") if st.session_state.is_playing else st.button("▶️ Play / ⏸️ Pause Stream")
+    if src_type != "Upload Image":
+        st.session_state.is_playing = not st.button("▶️ Play / ⏸️ Pause Stream") if st.session_state.is_playing else st.button("▶️ Play / ⏸️ Pause Stream")
+    else:
+        st.session_state.is_playing = False
 
     st.markdown("---")
     if st.button("Retrain Predictor"):
@@ -161,9 +170,58 @@ if not st.session_state.is_playing:
     video_box.image(np.zeros((480, 640, 3), dtype=np.uint8), channels="RGB")
     
 # --- Action Loop ---
-if st.session_state.is_playing:
-    model = load_core()
-    sev_model = get_severity_model(st.session_state.get('severity_model_trigger', 0))
+model = load_core()
+sev_model = get_severity_model(st.session_state.get('severity_model_trigger', 0))
+
+def update_dashboard(dets, t_inf, auto, t_loop=None):
+    if t_loop:
+        fps = 1.0 / (time.time() - t_loop)
+        fps_box.metric("FPS", f"{fps:.1f}")
+    else:
+        fps_box.empty()
+        
+    det_box.metric("Polyps", len(dets))
+    lat_box.metric("Latency", f"{t_inf:.1f} ms")
+    
+    # Auto-Adjust
+    if auto:
+        if not dets:
+            st.session_state.no_det_frames += 1
+            if st.session_state.no_det_frames > 10:
+                st.session_state.thresh = max(0.05, st.session_state.thresh - 0.05)
+                st.session_state.no_det_frames = 0
+        else:
+            st.session_state.no_det_frames = 0
+            if len(dets) > 10:
+                st.session_state.thresh = min(0.60, st.session_state.thresh + 0.10)
+                
+    # Severity
+    if dets:
+        top = max(dets, key=lambda x: x["confidence"])
+        w, h = top["bbox"][2]-top["bbox"][0], top["bbox"][3]-top["bbox"][1]
+        sev = max(1, min(10, int(round(sev_model.predict([[top["confidence"], w*h]])[0]))))
+        clr = "#ef4444" if sev > 7 else "#f59e0b" if sev > 4 else "#10b981"
+        sev_box.markdown(f"<div style='background:rgba(255,255,255,0.05);padding:10px;text-align:center;border-radius:10px;'><h3 style='color:#94a3b8;margin:0;'>Severity</h3><h1 style='color:{clr};margin:0;'>{sev}/10</h1></div>", unsafe_allow_html=True)
+        
+        # Catch uncertain
+        if 0.3 <= top["confidence"] <= 0.65 and len(st.session_state.uncertain) < 5:
+            if not any(np.allclose(u["bbox"], top["bbox"], atol=30) for u in st.session_state.uncertain):
+                st.session_state.uncertain.append(top)
+                render_fb()
+    else:
+        sev_box.markdown("<div style='text-align:center;color:#94a3b8;'>No polyps</div>", unsafe_allow_html=True)
+
+
+if src_type == "Upload Image":
+    if uploaded_file is not None:
+        file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+        f = cv2.imdecode(file_bytes, 1)
+        frame = cv2.cvtColor(cv2.resize(f, (640, int(f.shape[0]*(640/f.shape[1])))), cv2.COLOR_BGR2RGB)
+        res_frame, dets, t_inf = run_inference(frame, model, st.session_state.thresh)
+        video_box.image(res_frame, channels="RGB")
+        update_dashboard(dets, t_inf, auto)
+
+elif st.session_state.is_playing:
     cap = cv2.VideoCapture(int(st.session_state.src) if st.session_state.src.isdigit() else st.session_state.src)
     
     while st.session_state.is_playing:
@@ -191,37 +249,6 @@ if st.session_state.is_playing:
         video_box.image(res_frame, channels="RGB")
         
         # Stats
-        fps = 1.0 / (time.time() - t_loop)
-        fps_box.metric("FPS", f"{fps:.1f}")
-        det_box.metric("Polyps", len(dets))
-        lat_box.metric("Latency", f"{t_inf:.1f} ms")
-        
-        # Auto-Adjust
-        if auto:
-            if not dets:
-                st.session_state.no_det_frames += 1
-                if st.session_state.no_det_frames > 10:
-                    st.session_state.thresh = max(0.05, st.session_state.thresh - 0.05)
-                    st.session_state.no_det_frames = 0
-            else:
-                st.session_state.no_det_frames = 0
-                if len(dets) > 10:
-                    st.session_state.thresh = min(0.60, st.session_state.thresh + 0.10)
-                    
-        # Severity
-        if dets:
-            top = max(dets, key=lambda x: x["confidence"])
-            w, h = top["bbox"][2]-top["bbox"][0], top["bbox"][3]-top["bbox"][1]
-            sev = max(1, min(10, int(round(sev_model.predict([[top["confidence"], w*h]])[0]))))
-            clr = "#ef4444" if sev > 7 else "#f59e0b" if sev > 4 else "#10b981"
-            sev_box.markdown(f"<div style='background:rgba(255,255,255,0.05);padding:10px;text-align:center;border-radius:10px;'><h3 style='color:#94a3b8;margin:0;'>Severity</h3><h1 style='color:{clr};margin:0;'>{sev}/10</h1></div>", unsafe_allow_html=True)
-            
-            # Catch uncertain
-            if 0.3 <= top["confidence"] <= 0.65 and len(st.session_state.uncertain) < 5:
-                if not any(np.allclose(u["bbox"], top["bbox"], atol=30) for u in st.session_state.uncertain):
-                    st.session_state.uncertain.append(top)
-                    render_fb()
-        else:
-            sev_box.markdown("<div style='text-align:center;color:#94a3b8;'>No polyps</div>", unsafe_allow_html=True)
+        update_dashboard(dets, t_inf, auto, t_loop)
             
         time.sleep(0.01) # UI rest
