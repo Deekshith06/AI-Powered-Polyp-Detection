@@ -4,3 +4,4 @@ ultralytics
 scikit-learn
 pandas
 Pillow
+numpy<2.0.0
