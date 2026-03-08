@@ -211,7 +211,8 @@ if src_type == "Upload Image":
         f = cv2.imdecode(file_bytes, 1)
         frame = cv2.cvtColor(cv2.resize(f, (640, int(f.shape[0]*(640/f.shape[1])))), cv2.COLOR_BGR2RGB)
         res_frame, dets, t_inf = run_inference(frame, model, st.session_state.thresh)
-        video_box.image(res_frame, channels="RGB")
+        _, buffer = cv2.imencode('.jpg', cv2.cvtColor(res_frame, cv2.COLOR_RGB2BGR))
+        video_box.image(buffer.tobytes(), use_column_width=True)
         update_dashboard(dets, t_inf, auto)
 
 elif st.session_state.is_playing:
@@ -246,7 +247,8 @@ elif st.session_state.is_playing:
         
         # Inference
         res_frame, dets, t_inf = run_inference(frame, model, st.session_state.thresh)
-        video_box.image(res_frame, channels="RGB")
+        _, buffer = cv2.imencode('.jpg', cv2.cvtColor(res_frame, cv2.COLOR_RGB2BGR))
+        video_box.image(buffer.tobytes(), use_column_width=True)
         
         # Stats
         update_dashboard(dets, t_inf, auto, t_loop)
