@@ -1,6 +1,16 @@
 import os, time, json, sys
 
-import cv2
+# --- HACK: FIX STREAMLIT CLOUD OPENCV ISSUE ---
+# Streamlit's Linux containers lack libgthread, and their apt-get Debian repos are currently broken (unmet libffi7 dependencies). 
+# Ultralytics forces the install of the GUI 'opencv-python' anyways.
+# This catches the libgthread ImportError and neatly replaces the GUI package with the headless version natively.
+try:
+    import cv2
+except ImportError:
+    import subprocess
+    subprocess.run([sys.executable, "-m", "pip", "uninstall", "-y", "opencv-python", "opencv-python-headless"], check=False)
+    subprocess.run([sys.executable, "-m", "pip", "install", "opencv-python-headless"], check=False)
+    import cv2
 import numpy as np
 import streamlit as st
 from sklearn.linear_model import LinearRegression
