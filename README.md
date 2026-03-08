@@ -49,16 +49,34 @@ streamlit run app.py
 
 ---
 
+## 🧠 Training the Custom Medical Model
+
+The repository includes a fully automated pipeline to download the biological datasets, inject negative hallucination filters, and train the custom YOLOv8 model from scratch on your local machine.
+
+```bash
+# 1. Download Kvasir-SEG (462MB) and generate 100 Negative Backgrounds
+python prepare_dataset.py
+
+# 2. Train the YOLOv8 model for 10 epochs
+python train.py
+```
+
+*The scripts will automatically export the highly-accurate `polyp_model.pt` to the root directory, and the Streamlit app will immediately detect it and exit Prototype Mode.*
+
+---
+
 ## 📂 Project Structure
 
 ```
 Polyp_Detection_App/
 ├── app.py                  # Main Application logic, video processing, & inference
+├── prepare_dataset.py      # Automated Dataset downloader & Formatting strict
+├── train.py                # YOLOv8 Training Pipeline Script
+├── polyp_model.pt          # Custom Trained Medical Weights (Generated)
 ├── styles.css              # Glassmorphism UI definitions
 ├── requirements.txt        # Minimal dependency list
-├── yolov8n.pt              # Neural Network weights (auto-downloads)
 └── data/
-    ├── sample_colonoscopy.mp4 # Default simulation video feed
+    ├── sample_colonoscopy.mp4 # Default simulation video feed (Synthesized)
     └── user_corrections.json  # Locally persistent feedback storage
 ```
 
