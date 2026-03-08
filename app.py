@@ -31,7 +31,7 @@ st.session_state.setdefault('src', '0')
 
 # --- Core Logic & Helpers ---
 @st.cache_resource(show_spinner="Loading Engine...")
-def load_core():
+def load_core(_trigger_time=0):
     from ultralytics import YOLO # Lazy load to save RAM and startup time 
     if os.path.exists("polyp_model.pt"):
         model = YOLO("polyp_model.pt")
@@ -133,8 +133,10 @@ with st.sidebar:
         st.session_state.is_playing = False
 
     st.markdown("---")
-    if st.button("Retrain Predictor"):
+    if st.button("🔄 Reload Model & Predictor"):
+        st.cache_resource.clear()
         st.session_state.severity_model_trigger = time.time() # Force reload
+        st.rerun()
         
     st.download_button("Export Corrections", json.dumps(load_corrections()), "corrections.json", "application/json")
 
@@ -170,7 +172,8 @@ if not st.session_state.is_playing:
     video_box.image(np.zeros((480, 640, 3), dtype=np.uint8), channels="RGB")
     
 # --- Action Loop ---
-model = load_core()
+m_time = os.path.getmtime("polyp_model.pt") if os.path.exists("polyp_model.pt") else 0
+model = load_core(m_time)
 sev_model = get_severity_model(st.session_state.get('severity_model_trigger', 0))
 
 def update_dashboard(dets, t_inf, auto, t_loop=None):
