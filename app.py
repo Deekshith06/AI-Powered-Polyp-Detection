@@ -215,26 +215,33 @@ if src_type == "Upload Image":
         update_dashboard(dets, t_inf, auto)
 
 elif st.session_state.is_playing:
-    cap = cv2.VideoCapture(int(st.session_state.src) if st.session_state.src.isdigit() else st.session_state.src)
-    
-    while st.session_state.is_playing:
-        t_loop = time.time()
-        
-        # Pull 3 frames to keep buffer fresh but only process 1
-        for _ in range(3): ret, f = cap.read()
-        
-        if not ret or f is None:
-            # Reconnect/Loop
-            if str(st.session_state.src).isdigit():
-                time.sleep(0.5); cap = cv2.VideoCapture(int(st.session_state.src)); continue
-            else:
-                if not os.path.exists(st.session_state.src):
-                    st.error(f"Sample video not found at {st.session_state.src}. Please download it or switch to Webcam.")
-                    st.session_state.is_playing = False
-                    break
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0); ret, f = cap.read()
-                if not ret: break
+    # --- Native Streamlit Non-Blocking Video Loop ---
+    if "cap" not in st.session_state or st.session_state.get("cap_src") != st.session_state.src:
+        if "cap" in st.session_state and st.session_state.cap is not None:
+            st.session_state.cap.release()
+        st.session_state.cap = cv2.VideoCapture(int(st.session_state.src) if st.session_state.src.isdigit() else st.session_state.src)
+        st.session_state.cap_src = st.session_state.src
 
+    cap = st.session_state.cap
+    t_loop = time.time()
+    
+    ret, f = cap.read()
+    
+    if not ret or f is None:
+        if str(st.session_state.src).isdigit():
+            st.error("🚫 Live Webcam access via cv2 runs on the *Server*, not your browser. Please select 'Sample video' or 'Upload Image' when using Streamlit Cloud!")
+            st.session_state.is_playing = False
+        else:
+            if not os.path.exists(st.session_state.src):
+                st.error(f"Sample video not found at {st.session_state.src}. Please clone the repo completely.")
+                st.session_state.is_playing = False
+            else:
+                # Loop video seamlessly
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                ret, f = cap.read()
+                if not ret: st.session_state.is_playing = False
+
+    if st.session_state.is_playing and f is not None:
         frame = cv2.cvtColor(cv2.resize(f, (640, int(f.shape[0]*(640/f.shape[1])))), cv2.COLOR_BGR2RGB)
         
         # Inference
@@ -245,3 +252,4 @@ elif st.session_state.is_playing:
         update_dashboard(dets, t_inf, auto, t_loop)
             
         time.sleep(0.01) # UI rest
+        st.rerun() # Tell Streamlit to draw the next frame without blocking the server thread!
