@@ -1,5 +1,6 @@
 import os, json, urllib.request, zipfile, shutil, random
 import ssl
+import subprocess
 from pathlib import Path
 
 # Bypass macOS Python SSL Certificate verification errors
@@ -12,10 +13,8 @@ def report_hook(count, block_size, total_size):
 
 def download_and_prepare():
     url = "https://datasets.simula.no/downloads/kvasir-seg.zip"
-    coco_bg_url = "http://images.cocodataset.org/zips/val2017.zip"
     
     zip_path = "kvasir-seg.zip"
-    coco_zip_path = "coco_bg.zip"
     dataset_dir = Path("dataset").absolute()
     
     if os.path.exists("dataset"):
@@ -24,24 +23,14 @@ def download_and_prepare():
     # 1. Download Kvasir-SEG
     if not os.path.exists(zip_path):
         print("Downloading Kvasir-SEG dataset (~462MB)... This may take a few minutes.")
-        urllib.request.urlretrieve(url, zip_path, reporthook=report_hook)
+        subprocess.run(["curl", "-L", "-C", "-", "-o", zip_path, url])
         print("\nKvasir Download complete.")
     else:
         print("Found existing Kvasir zip file. Skipping download.")
         
-    # 2. Download COCO Background Images (to prevent OOD hallucinations)
-    if not os.path.exists(coco_zip_path):
-        print("\nDownloading COCO Background Images (~778MB) to teach the AI what NOT to detect...")
-        urllib.request.urlretrieve(coco_bg_url, coco_zip_path, reporthook=report_hook)
-        print("\nCOCO Download complete.")
-    else:
-        print("Found existing COCO zip file. Skipping download.")
-        
     print("Extracting files...")
     with zipfile.ZipFile(zip_path, 'r') as zip_ref:
         zip_ref.extractall(".")
-    with zipfile.ZipFile(coco_zip_path, 'r') as zip_ref:
-        zip_ref.extractall("coco_raw")
         
     print("Formatting bounding boxes for YOLOv8...")
     for split in ['train', 'val']:
@@ -81,22 +70,26 @@ def download_and_prepare():
     process_split(train_imgs, 'train')
     process_split(val_imgs, 'val')
     
-    print("Adding 150 Background (Negative) Images to prevent hallucinations...")
-    coco_images = list(Path("coco_raw/val2017").glob("*.jpg"))
-    random.shuffle(coco_images)
-    bg_images = coco_images[:150]
-    
-    for i, bg_path in enumerate(bg_images):
-        split_name = 'train' if i < 120 else 'val'
+    print("\nDownloading 100 Lightweight Background (Negative) Images to prevent hallucinations...")
+    # Bypass the huge 778MB COCO dataset and download 100 tiny random images ~1MB total
+    for i in range(100):
+        split_name = 'train' if i < 80 else 'val'
         bg_id = f"bg_{i}"
+        bg_img_path = dataset_dir / 'images' / split_name / f"{bg_id}.jpg"
         
-        # Copy image
-        shutil.copy(bg_path, dataset_dir / 'images' / split_name / f"{bg_id}.jpg")
-        
-        # Write completely empty text file (YOLO standard for negative/background image)
-        label_path = dataset_dir / 'labels' / split_name / f"{bg_id}.txt"
-        with open(label_path, "w") as lf:
-            pass
+        # Download a random 400x400 image (fast)
+        try:
+            urllib.request.urlretrieve("https://picsum.photos/400", bg_img_path)
+            # Write completely empty text file (YOLO standard for negative/background image)
+            label_path = dataset_dir / 'labels' / split_name / f"{bg_id}.txt"
+            with open(label_path, "w") as lf:
+                pass
+        except Exception as e:
+            pass # Ignore single download failures
+            
+        print(f"\rDownloaded lightweight background image {i+1}/100", end="", flush=True)
+            
+    print()
     
     yaml_content = f"""path: {dataset_dir}
 train: images/train
@@ -112,10 +105,6 @@ names:
         os.remove(zip_path)
     if os.path.exists("Kvasir-SEG"):
         shutil.rmtree("Kvasir-SEG")
-    if os.path.exists(coco_zip_path):
-        os.remove(coco_zip_path)
-    if os.path.exists("coco_raw"):
-        shutil.rmtree("coco_raw")
     print("Dataset prepared successfully in 'dataset/' directory!")
 
 if __name__ == "__main__":
