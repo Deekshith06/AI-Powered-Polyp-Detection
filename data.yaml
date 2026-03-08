@@ -1,0 +1,5 @@
+path: /Users/deekshith/Projects/766565/polyp_detection_app/dataset
+train: images/train
+val: images/val
+names:
+  0: polyp
