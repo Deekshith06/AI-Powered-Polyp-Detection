@@ -1,3 +1,5 @@
+./fake_opencv
+opencv-python-headless
 streamlit
 ultralytics
 scikit-learn
